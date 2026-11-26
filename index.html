@@ -1183,6 +1183,7 @@ function render(fromData) {
   else if (S.stale && S.connFail) banner = `<div class="banner">La base de datos no ha respondido todavía; los datos mostrados pueden no estar al día. El sistema sigue intentando solo, no necesita recargar.</div>`;
   else if (S.stale) banner = `<div class="banner info">Conectando con la base de datos…</div>`;
   if (SBC) banner = sbBanner() + sbPendingBanner() + banner;
+  banner += bkBanner(v);
   const ro = vm && modLevel(vm) === 'view';
   if (ro) banner += `<div class="banner info">Solo consulta: su usuario puede ver este módulo pero no hacer cambios.</div>`;
   main.innerHTML = banner + `<div class="crumbs" id="crumbs" role="navigation" aria-label="Ubicación"></div><div id="view"></div>`;
@@ -7112,7 +7113,8 @@ function zipStore(files) {
   e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csize, true); e.setUint32(16, off, true);
   return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
-function xlsxBlob(sheetName, rows) {
+function xlsxBlob(sheetName, rows) { return xlsxBook([[sheetName, rows]]); }
+function xlsxSheetXml(rows) {
   const x = (s) => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
   const colName = (i) => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
   const body = rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => {
@@ -7123,13 +7125,18 @@ function xlsxBlob(sheetName, rows) {
   }).join('')}</row>`).join('');
   const widths = rows[0].map((_, ci) => Math.min(48, Math.max(10, ...rows.slice(0, 200).map(r => String(r[ci] ?? '').length + 2))));
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${body}</sheetData></worksheet>`;
+  return sheet;
+}
+function xlsxBook(sheets) {
+  const x = (s) => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const n = sheets.length; const idx = [...Array(n).keys()];
   return zipStore([
-    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + idx.map(i => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
     ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
-    ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
-    ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+    ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${idx.map(i => `<sheet name="${x(sheets[i][0]).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + idx.map(i => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') + `<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` + '</Relationships>'],
     ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
-    ['xl/worksheets/sheet1.xml', sheet]
+    ...idx.map(i => [`xl/worksheets/sheet${i + 1}.xml`, xlsxSheetXml(sheets[i][1].length ? sheets[i][1] : [['']])])
   ]);
 }
 async function readXlsx(buf) {
@@ -7236,7 +7243,9 @@ VIEW_FN.config = (el) => {
     <label class="chk"><input type="checkbox" id="g_vsd" ${c.voidSameDayOnly !== false ? 'checked' : ''}> Anular documentos solo el mismo día (después se corrige con nota de crédito)</label>
     <div class="form" style="margin-top:8px"><div><label class="f">Tipo de cambio del dólar (L por US$)</label><input class="in" id="g_usd" value="${esc(c.usdRate || '')}" inputmode="decimal"></div></div>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn p" id="saveCfg2">Guardar cambios</button></div>
+    ${bkSection()}
   </div>`;
+  bkBind();
   CFG_EDIT = false; let logo = c.logo ? { data: c.logo, w: c.logoW, h: c.logoH } : null;
   el.addEventListener('input', () => { CFG_EDIT = true; }); el.addEventListener('change', () => { CFG_EDIT = true; });
   $('#g_logoF').onchange = async (e) => { const fl = e.target.files[0]; e.target.value = ''; if (!fl) return;
@@ -7581,6 +7590,106 @@ function roleForm(id) {
     try { await saveUsersCfg(c => { const i = c.roles.findIndex(x => x.id === rec.id); if (i >= 0) c.roles[i] = rec; else c.roles.push(rec); }); auditLog(`${ex ? 'Modificó' : 'Creó'} el rol ${name}`); closeModal(); toast('Rol guardado'); render(); } catch (e) { toast(e.message, true); }
   };
   const del = $('#rf_del'); if (del) del.onclick = async () => { try { await saveUsersCfg(c => { c.roles = c.roles.filter(x => x.id !== r.id); }); auditLog('Eliminó el rol ' + r.name); closeModal(); toast('Rol eliminado'); render(); } catch (e) { toast(e.message, true); } };
+}
+
+/* ======================= RESPALDOS ======================= */
+const BK_FORMAT = 'control-comercial-respaldo';
+const bkKey = () => 'cc_last_backup_' + (SBC && SBX.company ? SBX.company.id : 'local');
+const bkLast = () => Number(LS.getItem(bkKey()) || 0);
+function bkCollect() {
+  const data = {};
+  if (SBC && SBX.company) {
+    for (const [col, m] of SBX.cache) { if (col === 'audit') continue; data[col] = {}; for (const [id, d] of m) data[col][id] = d; }
+    for (const it of obLoad()) { (data[it.col] = data[it.col] || {})[it.id] = it.data; }
+  } else {
+    data.config = { main: clone(S.config) };
+    for (const col of COLS) { const v = S[col]; const arr = v instanceof Map ? [...v.values()] : (v || []); data[col] = {}; for (const d of arr) if (d && d.id) data[col][d.id] = d; }
+  }
+  return data;
+}
+function bkFileName(ext) { const n = ((S.config && (S.config.tradeName || S.config.legalName)) || 'empresa').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase(); return `respaldo-${n}-${today()}.${ext}`; }
+async function bkDownload() {
+  const data = bkCollect(); const counts = {}; for (const c in data) counts[c] = Object.keys(data[c]).length;
+  const doc = { format: BK_FORMAT, version: 1, createdAt: nowIso(), company: { name: S.config && (S.config.tradeName || S.config.legalName), rtn: S.config && S.config.rtn }, counts, data };
+  await saveBlob(bkFileName('json'), new Blob([JSON.stringify(doc)], { type: 'application/json' }), 'Respaldo descargado. Guárdelo en un lugar seguro.');
+  LS.setItem(bkKey(), String(Date.now())); auditLog('Descargó un respaldo de datos'); if (S.ready) render(true);
+}
+async function bkExcel() {
+  const cust = (id) => (S.customers.get(id) || {}).name || '';
+  const sup = (id) => (S.suppliers.get(id) || {}).name || '';
+  const sales = S.sales.filter(s => s.status !== 'draft');
+  const sheets = [
+    ['Ventas', [['Número', 'Fecha', 'Cliente', 'RTN', 'Subtotal', 'ISV', 'Total', 'Pago', 'Saldo', 'Estado']].concat(sales.map(s => [s.number || '', fdate(s.createdAt), s.customerName || cust(s.customerId), s.customerRtn || '', Number(s.subtotal || 0), Number(s.tax || 0), Number(s.total || 0), s.paymentType === 'credit' ? 'Crédito' : 'Contado', Number(s.balance || 0), s.status === 'voided' ? 'Anulada' : 'Emitida']))],
+    ['Productos', [['Código', 'Nombre', 'Categoría', 'Precio', 'Costo promedio', 'Existencia']].concat([...S.products.values()].map(p => [p.sku || '', p.name || '', p.category || '', Number(p.price || 0), Number(p.avgCost || p.purchasePrice || 0), Number(p.stock || 0)]))],
+    ['Clientes', [['Código', 'Nombre', 'RTN', 'Teléfono', 'Límite de crédito', 'Saldo']].concat([...S.customers.values()].filter(c => !c.walkIn).map(c => [c.code || '', c.name || '', c.rtn || '', c.phone || '', Number(c.creditLimit || 0), Number(customerBalance(c.id) || 0)]))],
+    ['Cobros', [['Fecha', 'Cliente', 'Monto', 'Forma de pago', 'Referencia']].concat(S.payments.map(p => [fdate(p.date || p.createdAt), p.customerName || cust(p.customerId), Number(p.amount || 0), p.method || '', p.reference || p.ref || '']))],
+    ['Compras', [['Número', 'Fecha', 'Proveedor', 'Factura', 'Total', 'Estado']].concat(S.purchases.map(p => [p.number || '', fdate(p.date || p.createdAt), p.supplierName || sup(p.supplierId), p.invoice || p.invoiceNumber || '', Number(p.total || 0), p.status === 'voided' ? 'Anulada' : (p.status || '')]))],
+    ['Gastos', [['Número', 'Fecha', 'Categoría', 'Descripción', 'Monto', 'Estado']].concat(S.expenses.map(e => [e.number || '', fdate(e.date || e.createdAt), e.category || '', e.description || '', Number(e.amount || 0), e.status === 'voided' ? 'Anulado' : 'Registrado']))]
+  ];
+  await saveBlob(bkFileName('xlsx'), xlsxBook(sheets), 'Excel descargado');
+}
+// Une la configuración del respaldo con la actual: conserva usuarios y PIN actuales y nunca baja un correlativo
+function bkMergeConfig(cur, bak) {
+  const out = clone(bak);
+  for (const k of ['users', 'roles', 'recoveryHash', 'recoverySalt', 'autoLockMin']) { if (cur && cur[k] !== undefined) out[k] = clone(cur[k]); else delete out[k]; }
+  const maxNext = (a, b) => { if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return; for (const k of Object.keys(a)) { if (/next$/i.test(k) && typeof a[k] === 'number') b[k] = typeof b[k] === 'number' ? Math.max(a[k], b[k]) : a[k]; else if (a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) { if (!b[k] || typeof b[k] !== 'object') b[k] = clone(a[k]); else maxNext(a[k], b[k]); } } };
+  maxNext(cur, out); return out;
+}
+async function bkRestoreFile(file) {
+  if (usersOn() && !isAdminUser(curUser())) return toast('Solo el administrador puede restaurar un respaldo.', true);
+  let doc; try { doc = JSON.parse(await file.text()); } catch (e) { return toast('El archivo no es un respaldo válido.', true); }
+  if (!doc || doc.format !== BK_FORMAT || !doc.data) return toast('El archivo no es un respaldo de CONTROL COMERCIAL.', true);
+  const names = { products: 'Productos', customers: 'Clientes', sales: 'Ventas', payments: 'Cobros', suppliers: 'Proveedores', purchases: 'Compras', expenses: 'Gastos', quotes: 'Cotizaciones', orders: 'Pedidos', movements: 'Movimientos de inventario' };
+  const list = Object.entries(doc.counts || {}).filter(([c, n]) => n && names[c]).map(([c, n]) => `<li>${names[c]}: <b>${n}</b></li>`).join('');
+  openModal(`<div class="mh"><h2>Restaurar respaldo</h2><button class="x" data-close>×</button></div>
+  <div class="mbody"><p style="margin-top:0">Respaldo de <b>${esc((doc.company && doc.company.name) || 'empresa')}</b> del <b>${fdt(doc.createdAt)}</b>.</p><ul class="sub">${list}</ul>
+  <div class="banner" style="margin:10px 0">Los registros del respaldo reemplazan a los actuales que tengan el mismo código. Lo que se registró después del respaldo no se borra. Los usuarios, PIN y correlativos de facturas actuales se conservan.</div>
+  <label class="f">Para confirmar escriba <b>RESTAURAR</b></label><input class="in" id="bkConf" autocomplete="off"><div class="sub" id="bkProg" style="margin-top:8px"></div></div>
+  <div class="mf"><button class="btn" data-close>Cancelar</button><button class="btn p" id="bkGo">Restaurar</button></div>`);
+  bindClose();
+  $('#bkGo').onclick = async () => {
+    if ($('#bkConf').value.trim().toUpperCase() !== 'RESTAURAR') return toast('Escriba RESTAURAR para confirmar.', true);
+    const btn = $('#bkGo'); btn.disabled = true; const prog = (t) => { const e = $('#bkProg'); if (e) e.textContent = t; };
+    try { await bkApply(doc.data, prog); auditLog(`Restauró un respaldo del ${fdt(doc.createdAt)}`); closeModal(); toast('Respaldo restaurado'); render(); }
+    catch (e) { btn.disabled = false; toast('No se pudo restaurar: ' + e.message, true); }
+  };
+}
+async function bkApply(data, prog) {
+  const cfg = data.config && data.config.main ? bkMergeConfig(S.config, data.config.main) : null;
+  const rows = []; for (const col in data) { if (col === 'config' || col === 'audit' || !/^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(col)) continue; for (const id in data[col]) rows.push([col, id, data[col][id]]); }
+  if (SBC && SBX.company) {
+    const all = rows.map(([col, id, d]) => ({ company_id: SBX.company.id, col, id, data: d, deleted: false }));
+    if (cfg) all.unshift({ company_id: SBX.company.id, col: 'config', id: 'main', data: cfg, deleted: false });
+    for (let i = 0; i < all.length; i += 300) { prog(`Guardando ${Math.min(i + 300, all.length)} de ${all.length}…`); await sbRest('docs?on_conflict=company_id,col,id', { method: 'POST', body: all.slice(i, i + 300), headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } }); }
+    for (const r of all) sbColMap(r.col).set(r.id, r.data); sbEmit(null);
+    return;
+  }
+  if (S.mode === 'cloud') {
+    let n = 0; if (cfg) await db.doc('config/main').set(cfg);
+    for (const [col, id, d] of rows) { await db.collection(col).doc(id).set(d); if (++n % 25 === 0) prog(`Guardando ${n} de ${rows.length}…`); }
+    return;
+  }
+  if (cfg) S.config = cfg;
+  for (const [col, id, d] of rows) { if (!(col in S)) continue; if (S[col] instanceof Map) S[col].set(id, d); else { const a = S[col]; const i = a.findIndex(x => x.id === id); if (i >= 0) a[i] = d; else a.push(d); } }
+  localSave();
+}
+function bkDue() { if (!S.ready || !S.sales || !S.sales.length) return false; if (usersOn() && !isAdminUser(curUser())) return false; return Date.now() - bkLast() > 7 * 86400000; }
+function bkBanner(v) {
+  if (v !== 'inicio' || !bkDue()) return '';
+  const last = bkLast();
+  return `<div class="banner info" id="bkBan">${last ? `Su último respaldo fue hace ${Math.floor((Date.now() - last) / 86400000)} días.` : 'Todavía no ha descargado un respaldo de sus datos.'} Guarde una copia en su computadora. <button class="btn sm" id="bkNow" style="margin-left:6px">Descargar respaldo</button></div>`;
+}
+document.addEventListener('click', (e) => { const t = e.target.closest && e.target.closest('#bkNow'); if (t) bkDownload(); });
+function bkSection() {
+  const last = bkLast();
+  return `<div class="sec">Respaldo de datos</div>
+  <p class="sub" style="margin-top:0">Descargue una copia de todos sus datos a esta computadora. ${last ? `Último respaldo en este equipo: <b>${fdt(new Date(last).toISOString())}</b>.` : 'Todavía no ha descargado un respaldo en este equipo.'} Recomendado: una vez por semana.</p>
+  <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn p" id="bkDl">Descargar respaldo</button><button type="button" class="btn" id="bkXls">Excel para el contador</button>
+  <label class="btn" for="bkFile" style="cursor:pointer">Restaurar respaldo</label><input type="file" id="bkFile" accept=".json,application/json" style="position:absolute;opacity:0;width:1px;height:1px"></div>`;
+}
+function bkBind() {
+  const a = $('#bkDl'); if (!a) return; a.onclick = bkDownload; $('#bkXls').onclick = bkExcel;
+  $('#bkFile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) bkRestoreFile(f); };
 }
 
 /* ------------------------------ arranque ----------------------------- */
