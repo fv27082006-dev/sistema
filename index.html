@@ -820,6 +820,8 @@ async function sbNewCompany(name, phone) {
 }
 async function sbOpenCompany(c, seed) {
   if (!c) return;
+  if (SBX.company && SBX.company.id !== c.id) { LS.setItem('cc_sb_company', c.id); if (seed) LS.setItem('cc_sb_seed', JSON.stringify(seed)); setSess(null); location.hash = ''; location.reload(); return; }
+  if (!seed) { try { seed = JSON.parse(LS.getItem('cc_sb_seed') || 'null'); } catch (e) { } LS.removeItem('cc_sb_seed'); }
   SBX.company = c; LS.setItem('cc_sb_company', c.id);
   const g = $('#acct'); if (g) g.remove();
   SBX.cache = new Map(); SBX.subs = []; SBX.since = null; SBX.loaded = false;
@@ -842,10 +844,11 @@ async function sbBoot() {
 
 function acctButtons(box) {
   if (!SBC || !SBX.sess || !box) return; const d = document.createElement('div'); d.style.cssText = 'display:grid;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)';
-  d.innerHTML = `<div class="sub">Cuenta: <b>${esc(SBX.sess.user.email)}</b></div>${SBX.admin ? '<a class="btn" href="#plataforma" id="acPlat">Panel de plataforma</a>' : ''}${SBX.companies.length > 1 ? '<button class="btn" id="acSwCo">Cambiar de empresa</button>' : ''}<button class="btn d" id="acLogout">Cerrar sesión de la cuenta</button>`;
+  d.innerHTML = `<div class="sub">Cuenta: <b>${esc(SBX.sess.user.email)}</b></div>${SBX.admin ? '<a class="btn" href="#plataforma" id="acPlat">Panel de plataforma</a>' : ''}${SBX.companies.length > 1 ? '<button class="btn" id="acSwCo">Cambiar de empresa</button>' : ''}<button class="btn" id="acAddCo">Agregar otra empresa</button><button class="btn d" id="acLogout">Cerrar sesión de la cuenta</button>`;
   box.appendChild(d); const pl = d.querySelector('#acPlat'); if (pl) pl.onclick = () => closeModal();
   const sc = d.querySelector('#acSwCo'); if (sc) sc.onclick = () => { LS.removeItem('cc_sb_company'); location.hash = ''; location.reload(); };
   d.querySelector('#acLogout').onclick = sbLogout;
+  d.querySelector('#acAddCo').onclick = async () => { closeModal(); try { await sbLoadCompanies(); } catch (e) { } ACCT.mode = 'company'; acctShow(); const g = $('#acct'); if (g && !g.querySelector('#acBack')) { const x = document.createElement('p'); x.className = 'sub'; x.style.cssText = 'text-align:center;margin:10px 0 0'; x.innerHTML = '<a href="javascript:void 0" id="acBack">← Volver a ' + esc(SBX.company.name) + '</a>'; g.querySelector('.gcard').appendChild(x); x.querySelector('a').onclick = () => g.remove(); } };
 }
 function acctMenu() {
   const i = sbSubInfo() || {}; const c = SBX.company;
