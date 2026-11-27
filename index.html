@@ -72,6 +72,15 @@ tr.click:hover td{background:#f8fafc}
 .scroll{overflow-x:auto}
 /* POS */
 .pos{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:14px;align-items:start}
+.pmode{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}.pmode button{border:0;background:transparent;padding:0 12px;height:36px;font:inherit;font-size:13px;font-weight:600;color:#4a5a6e;cursor:pointer}.pmode button.on{background:#16365c;color:#fff}
+.pos.std .cart .clines{display:none}.pos.std section:first-child{position:relative}
+.psug{position:absolute;left:0;right:0;top:54px;z-index:20;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 30px rgba(20,40,70,.14);overflow:hidden}
+.psug .sg{display:grid;grid-template-columns:110px 1fr auto 100px;gap:10px;align-items:center;padding:9px 14px;cursor:pointer;font-size:13.5px;border-bottom:1px solid #f0f2f5}.psug .sg:last-child{border-bottom:0}.psug .sg.on,.psug .sg:hover{background:#eef4fb}
+.psug .sk{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.psug .sp{text-align:right}.psug .ss{font-size:12px}
+.stdbox{margin-top:10px;padding:0;overflow:hidden}.stdbox .scroll{max-height:calc(100vh - 290px);overflow:auto}.stdt{width:100%;border-collapse:collapse;font-size:13.5px}.stdt th{position:sticky;top:0;background:#f7f9fb;z-index:1;text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+.stdt td{padding:6px 10px;border-bottom:1px solid #f0f2f5;vertical-align:middle}.stdt .r{text-align:right;white-space:nowrap}.stdt td:nth-child(2){white-space:nowrap;font-size:12.5px}.stdt input[data-qty]{width:78px;text-align:right;padding:5px 8px}.stdt select{width:auto;padding:4px 8px;font-size:12.5px}.stdt tbody tr:hover{background:#fafcfe}
+.stdfoot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid var(--line);background:#f7f9fb;font-size:13.5px}.stdfoot b{font-size:16px}
+@media(max-width:700px){.psug .sg{grid-template-columns:1fr auto}.psug .sk,.psug .ss{display:none}.stdbox .scroll{max-height:none}.stdt th:nth-child(1),.stdt td:nth-child(1),.stdt th:nth-child(2),.stdt td:nth-child(2),.stdt th:nth-child(4),.stdt td:nth-child(4),.stdt th:nth-child(6),.stdt td:nth-child(6),.stdt th:nth-child(7),.stdt td:nth-child(7){display:none}.stdt td,.stdt th{padding:6px 6px}.stdt input[data-qty]{width:58px}}
 .plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px;margin-top:10px;max-height:calc(100vh - 300px);overflow:auto;padding-bottom:4px;align-content:start}
 .posbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--brand);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:14px}
 .posbar .pb-l,.posbar .pb-r{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -1604,13 +1613,14 @@ VIEW_FN.pos = (el) => {
     </div>
     <div class="pb-r"><span class="pill ${navigator.onLine ? 'g' : 'y'}">${navigator.onLine ? 'En línea' : 'Sin conexión'}</span>
       <button class="btn" id="posHold">Recuperar<span class="hide-m"> (F7)</span>${nh ? ` <span class="pill y">${nh}</span>` : ''}</button>
-      <button class="btn" id="posPrev">Ventas y devoluciones<span class="hide-m"> (F8)</span></button></div>
+      <button class="btn" id="posPrev">Ventas y devoluciones<span class="hide-m"> (F8)</span></button>
+      <div class="pmode" role="group" aria-label="Vista del punto de venta"><button data-pm="img" class="${posStd() ? '' : 'on'}" title="Productos con imágenes">Imágenes</button><button data-pm="std" class="${posStd() ? 'on' : ''}" title="Vista compacta para facturas grandes">Estándar</button></div></div>
   </div>
-  <div class="pos">
+  <div class="pos ${posStd() ? 'std' : ''}">
     <section style="min-width:0">
       <div class="psearch">${svg('box')}<input id="posSearch" placeholder="Escanee o escriba código de barras, SKU o descripción (F2)" autocomplete="off" value="${esc(POS.query)}" aria-label="Buscar producto"><span class="muted hide-m">Cantidad × código: <b>12*código</b></span></div>
-      <div class="pcats" id="pcats"></div>
-      <div class="plist" id="plist"></div>
+      ${posStd() ? `<div class="psug" id="psug" role="listbox" hidden></div><div class="card stdbox" id="stdLines"></div>` : `<div class="pcats" id="pcats"></div>
+      <div class="plist" id="plist"></div>`}
       <div class="pkeys hide-m"><span><b>F2</b> buscar</span><span><b>F3</b> cliente</span><span><b>F4</b> cantidad</span><span><b>F5</b> descuento</span><span><b>F6</b> suspender</span><span><b>F7</b> recuperar</span><span><b>F8</b> ventas</span><span><b>F9</b> cobrar</span><span><b>Esc</b> cancelar venta</span></div>
     </section>
     <section class="card pad cart" id="cart"></section>
@@ -1618,7 +1628,9 @@ VIEW_FN.pos = (el) => {
   const inp = $('#posSearch');
   inp.oninput = () => { POS.query = inp.value; renderProductGrid(); };
   inp.onkeydown = (e) => {
+    if (posStd() && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); const n = POS.sug.length; if (n) { POS.sugI = (POS.sugI + (e.key === 'ArrowDown' ? 1 : -1) + n) % n; renderSug(); } return; }
     if (e.key !== 'Enter') return;
+    if (posStd() && POS.sugI >= 0 && POS.sug[POS.sugI] && !findByCode(inp.value.trim().replace(/^(\d+(?:[.,]\d+)?)\s*[*x×]\s*/i, ''))) { const m0 = inp.value.trim().match(/^(\d+(?:[.,]\d+)?)\s*[*x×]/i); const p = POS.sug[POS.sugI]; addToCart(p, unitsOf(p)[0], m0 ? Number(m0[1].replace(',', '.')) : 1); inp.value = ''; POS.query = ''; renderProductGrid(); return; }
     let code = inp.value.trim(); if (!code) return;
     let mult = 1; const m = code.match(/^(\d+(?:[.,]\d+)?)\s*[*x×]\s*(.+)$/i); if (m) { mult = Number(m[1].replace(',', '.')); code = m[2].trim(); }
     if (!(mult > 0)) return toast('La cantidad no es válida.', true);
@@ -1629,17 +1641,19 @@ VIEW_FN.pos = (el) => {
   };
   const pw = $('#posWh'); if (pw) pw.onchange = () => { POS.wh = pw.value; renderProductGrid(); renderCart(); };
   $('#posCash').onclick = cashPanel; $('#posPrev').onclick = previousSales; $('#posHold').onclick = recoverDialog; $('#posTerm').onclick = terminalDialog;
+  el.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { LS.setItem('cc_pos_mode', b.dataset.pm); POS.query = ''; render(); });
+  if (posStd()) inp.onblur = () => setTimeout(() => { const g = $('#psug'); if (g && document.activeElement !== inp) g.hidden = true; }, 150);
   setTimeout(() => inp.focus(), 20);
   renderCats(); renderProductGrid(); renderCart();
 };
-VIEW_FN.posRefresh = () => { if ($('#plist')) { renderCats(); renderProductGrid(); } if ($('#cart') && !document.activeElement?.closest('#cart')) renderCart(); };
+VIEW_FN.posRefresh = () => { if ($('#plist')) { renderCats(); renderProductGrid(); } if ($('#psug') && POS.query) renderSug(); if ($('#cart') && !document.activeElement?.closest('#cart')) renderCart(); };
 // Atajos de teclado del POS
 document.addEventListener('keydown', (e) => {
   if (currentView() !== 'pos' || modalOpen() || document.body.classList.contains('appmode')) return;
   const k = e.key; const fn = {
     F2: () => { const i = $('#posSearch'); i.focus(); i.select(); },
     F3: () => customerPicker(),
-    F4: () => { const q = [...document.querySelectorAll('#cart [data-qty]')].pop(); if (q) { q.focus(); q.select(); } else toast('Agregue un producto primero.', true); },
+    F4: () => { const q = [...document.querySelectorAll(posStd() ? '#stdLines [data-qty]' : '#cart [data-qty]')].pop(); if (q) { q.focus(); q.select(); } else toast('Agregue un producto primero.', true); },
     F5: () => { const l = POS.lines[POS.lines.length - 1]; if (l && !l.manual) lineDiscount(l.key); else toast('Agregue un producto primero.', true); },
     F6: () => suspendSale(),
     F7: () => recoverDialog(),
@@ -1684,7 +1698,46 @@ function renderCats() {
   el.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { POS.cat = b.dataset.cat; renderCats(); renderProductGrid(); });
 }
 function nextLot(p, wh) { const ls = (p.lots || []).filter(l => l.qty > 0 && lotWh(p, l) === wh && l.expiry).sort((a, b) => a.expiry.localeCompare(b.expiry)); return ls[0] || null; }
+const posStd = () => LS.getItem('cc_pos_mode') === 'std';
+function renderSug() {
+  POS.sug = POS.sug || []; if (POS.sugI == null) POS.sugI = -1;
+  const g = $('#psug'); if (!g) return; const q = POS.query.trim();
+  if (!q) { g.hidden = true; POS.sug = []; POS.sugI = -1; return; }
+  const qq = q.replace(/^(\d+(?:[.,]\d+)?)\s*[*x×]\s*/i, ''); const save = POS.query; POS.query = qq; const list = filteredProducts().slice(0, 8); POS.query = save;
+  if (POS.sug.map(p => p.id).join() !== list.map(p => p.id).join()) POS.sugI = list.length ? 0 : -1;
+  POS.sug = list; const W = posWh();
+  g.hidden = false;
+  g.innerHTML = list.length ? list.map((p, i) => { const st = availableOf(p.id, W, POS.customerId); const svc = p.kind === 'service';
+    return `<div class="sg ${i === POS.sugI ? 'on' : ''}" role="option" data-sg="${p.id}"><span class="sk">${esc(p.sku || '')}</span><span class="sn">${esc(p.name)}</span><span class="ss ${svc ? 'muted' : st <= 0 ? 'bad' : 'ok'}">${svc ? 'Servicio' : st <= 0 ? 'Sin existencia' : qfmt(st) + ' disp.'}</span><b class="sp">${L(retailIncl(p))}</b></div>`; }).join('')
+    : '<div class="sg muted">Sin resultados</div>';
+  g.querySelectorAll('[data-sg]').forEach(r => r.onmousedown = (e) => { e.preventDefault(); const p = S.products.get(r.dataset.sg); const m0 = POS.query.trim().match(/^(\d+(?:[.,]\d+)?)\s*[*x×]/i); addToCart(p, unitsOf(p)[0], m0 ? Number(m0[1].replace(',', '.')) : 1); const i = $('#posSearch'); i.value = ''; POS.query = ''; renderSug(); i.focus(); });
+}
+function renderStdLines() {
+  const el = $('#stdLines'); if (!el) return;
+  const gifts = cartGifts(POS.lines); const items = r4(POS.lines.reduce((a, l) => a + l.qty, 0));
+  if (!POS.lines.length) { el.innerHTML = '<div class="empty" style="padding:40px 16px">Escanee o escriba el código o nombre del producto arriba y presione <b>Enter</b>.<br>Con <b>12*código</b> agrega 12 de una vez.</div>'; return; }
+  el.innerHTML = `<div class="scroll"><table class="stdt"><thead><tr><th>#</th><th>Código</th><th>Descripción</th><th>Unidad</th><th class="r">Cant.</th><th class="r">Precio</th><th class="r">Desc.</th><th class="r">Total</th><th></th></tr></thead><tbody>
+    ${POS.lines.map((l, i) => { const p = S.products.get(l.productId); if (!p) return ''; const units = unitsOf(p); const u = units.find(x => x.id === l.unitId) || units[0];
+      return `<tr data-k="${l.key}"><td class="muted">${i + 1}</td><td class="muted">${esc(u.barcode || p.sku || '')}</td><td><b>${esc(p.name)}</b>${l.source ? ` <span class="pill g" style="font-size:10.5px">${esc(l.source)}</span>` : ''}</td>
+        <td>${units.length > 1 ? `<select class="in" data-unit>${units.map(x => `<option value="${x.id}" ${x.id === l.unitId ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>` : esc(u.label)}</td>
+        <td class="r"><input class="in" data-qty value="${qfmt(l.qty)}" inputmode="decimal" aria-label="Cantidad de ${esc(p.name)}"></td><td class="r">${L(l.price)}</td>
+        <td class="r">${l.manual ? '' : `<button class="btn sm" data-disc>${l.discountPct ? '−' + l.discountPct + ' %' : 'Desc.'}</button>`}</td><td class="r"><b>${L(r2(l.qty * l.price))}</b></td>
+        <td><button class="btn sm d" data-del aria-label="Quitar ${esc(p.name)}" title="Quitar" style="border:0;font-size:17px;line-height:1;padding:2px 7px">×</button></td></tr>`; }).join('')}
+    ${gifts.map(g => { const gp = S.products.get(g.productId); return `<tr><td></td><td class="muted">${esc(gp.sku || '')}</td><td>${esc(gp.name)} <span class="pill g">Regalo</span><div class="sub">por ${esc(g.fromName)}</div></td><td>${esc(gp.baseUnit || 'Unidad')}</td><td class="r">${qfmt(g.qtyBase)}</td><td class="r">${L(0)}</td><td></td><td class="r">${L(0)}</td><td></td></tr>`; }).join('')}
+    </tbody></table></div><div class="stdfoot"><span>${POS.lines.length} línea${POS.lines.length === 1 ? '' : 's'} · ${qfmt(items)} artículo${items === 1 ? '' : 's'}</span><b>Total ${L(cartTotals(POS.lines).total)}</b></div>`;
+  el.querySelectorAll('tr[data-k]').forEach(row => {
+    const l = POS.lines.find(x => x.key === row.dataset.k); if (!l) return;
+    row.querySelector('[data-del]').onclick = () => { POS.lines = POS.lines.filter(x => x !== l); renderCart(); };
+    const q = row.querySelector('[data-qty]');
+    q.onchange = () => { const v = Number(q.value.replace(',', '.')); if (v > 0) l.qty = r4(v); else POS.lines = POS.lines.filter(x => x !== l); renderCart(); };
+    q.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); q.blur(); const s = $('#posSearch'); if (s) s.focus(); } };
+    const us = row.querySelector('[data-unit]'); if (us) us.onchange = () => { l.unitId = us.value; renderCart(); };
+    const dz = row.querySelector('[data-disc]'); if (dz) dz.onclick = () => lineDiscount(l.key);
+  });
+  if (POS._scroll) { const sc = el.querySelector('.scroll'); if (sc) sc.scrollTop = sc.scrollHeight; }
+}
 function renderProductGrid() {
+  if (posStd()) return renderSug();
   const list = filteredProducts();
   const el = $('#plist'); if (!el) return;
   if (!S.products.size) { el.innerHTML = `<div class="empty" style="grid-column:1/-1">No hay productos. <a href="#productos">Crear el primero</a></div>`; return; }
@@ -1837,6 +1890,8 @@ function renderCart() {
   $('#holdBtn').onclick = () => suspendSale(); $('#quoteBtn').onclick = quoteFromPos;
   const ec = $('#exCash'); if (ec) ec.onclick = () => confirmBox('Devolver en efectivo', `Se entregan ${L(POS.exchange.amount)} al cliente y se cancela el cambio.`, 'Devolver', async () => { await settleExchange(0); renderCart(); });
   $('#payBtn').onclick = openPayment;
+  if (posStd()) renderStdLines();
+  else if (POS.lines.length >= 12 && !LS.getItem('cc_pos_mode')) { const cl = el.querySelector('.clines'); if (cl && !el.querySelector('#stdTip')) cl.insertAdjacentHTML('beforebegin', '<div class="banner info" id="stdTip" style="margin:8px 0 0;font-size:12.5px">¿Factura grande? Pase a la vista <b>Estándar</b> (arriba) para ver solo los productos facturados.</div>'); }
   fitCart();
   if (POS._scroll) { POS._scroll = false; const cl = el.querySelector('.clines'); if (cl) cl.scrollTop = cl.scrollHeight; }
 }
