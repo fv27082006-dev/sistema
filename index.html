@@ -756,6 +756,21 @@ let ACCT = { mode: 'login', busy: false };
 function acctShow() {
   let g = $('#acct'); if (!g) { g = document.createElement('div'); g.id = 'acct'; g.className = 'gate'; g.style.zIndex = 60; document.body.appendChild(g); }
   const card = (inner) => `<div class="gcard"><div style="display:flex;align-items:center;gap:10px;font-weight:800;color:#16365c"><span style="width:36px;height:36px;border-radius:10px;background:#16365c;color:#fff;display:grid;place-items:center;font-size:14px">CC</span>CONTROL COMERCIAL</div>${inner}</div>`;
+  if (ACCT.mode === 'reset') {
+    g.innerHTML = card(`<h2>Contraseña nueva</h2><p class="sub" style="margin:0 0 12px">Para ${esc(SBX.sess ? SBX.sess.user.email : '')}</p><div class="form" style="grid-template-columns:1fr">
+      <div><label class="f">Contraseña nueva (mínimo 8)</label><input class="in" id="acPass" type="password" autocomplete="new-password"></div>
+      <div><label class="f">Repita la contraseña</label><input class="in" id="acPass2" type="password" autocomplete="new-password"></div></div>
+      <button class="btn p" id="acReset" style="width:100%;margin-top:14px;justify-content:center">Guardar y entrar</button>`);
+    const b = $('#acReset'); b.onclick = async () => {
+      const pw = $('#acPass').value; if (pw.length < 8) return toast('La contraseña debe tener al menos 8 caracteres.', true); if (pw !== $('#acPass2').value) return toast('Las contraseñas no coinciden.', true);
+      b.disabled = true;
+      try { const r = await fetch(SBC.url + '/auth/v1/user', { method: 'PUT', headers: { apikey: SBC.key, Authorization: 'Bearer ' + (await sbToken()), 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }); const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(/different from the old/i.test(j.msg || j.message || '') ? 'La contraseña nueva debe ser diferente a la anterior.' : sbErr(r.status, j));
+        toast('Contraseña cambiada'); if (SBX.company && SBX.loaded) { const g2 = $('#acct'); if (g2) g2.remove(); } else await sbAfterLogin(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    };
+    g.querySelectorAll('input').forEach(i => i.onkeydown = (e) => { if (e.key === 'Enter') b.click(); });
+    setTimeout(() => { if (!g.contains(document.activeElement)) $('#acPass').focus(); }, 30); return;
+  }
   if (ACCT.mode === 'signup') {
     g.innerHTML = card(`<h2>Crear cuenta</h2><p class="sub" style="margin:0 0 12px">15 días gratis. Sin tarjeta.</p><div class="form" style="grid-template-columns:1fr">
       <div><label class="f">Nombre del negocio *</label><input class="in" id="acBiz" placeholder="Ej. Ferretería El Martillo"></div>
@@ -785,7 +800,7 @@ function acctShow() {
   g.querySelectorAll('[data-co]').forEach(b => b.onclick = () => sbOpenCompany(SBX.companies.find(c => c.id === b.dataset.co)));
   const nc = $('#acNewCo'); if (nc) nc.onclick = async () => { const n = $('#acBiz').value.trim(); if (n.length < 2) return toast('Escriba el nombre del negocio.', true); try { nc.disabled = true; await sbNewCompany(n, $('#acTel').value); } catch (e) { toast(e.message, true); nc.disabled = false; } };
   const out = $('#acOut'); if (out) out.onclick = sbLogout;
-  setTimeout(() => { const f = g.querySelector('input'); if (f) f.focus(); }, 30);
+  setTimeout(() => { const f = g.querySelector('input'); if (f && !g.contains(document.activeElement)) f.focus(); }, 30);
 }
 async function acctSubmit() {
   if (ACCT.busy) return; const mail = $('#acMail').value.trim(), pass = $('#acPass').value;
@@ -808,7 +823,7 @@ async function acctSubmit() {
 async function acctForgot() {
   const mail = ($('#acMail') && $('#acMail').value.trim()) || '';
   if (!/^\S+@\S+\.\S+$/.test(mail)) return toast('Escriba primero su correo arriba.', true);
-  try { await sbAuth('recover', { email: mail }); toast('Si el correo está registrado, le llegará un enlace para cambiar la contraseña.'); } catch (e) { toast(e.message, true); }
+  try { await sbAuth('recover?redirect_to=' + encodeURIComponent(location.origin + location.pathname), { email: mail }); toast('Le enviamos un correo con un enlace para crear una contraseña nueva. Revise también la carpeta de spam.'); } catch (e) { toast(e.message, true); }
 }
 async function sbLoadCompanies() {
   const rows = await sbRest(`members?select=role,companies(id,name,phone,status,plan,trial_ends_at,paid_until)&user_id=eq.${SBX.sess.user.id}`);
@@ -845,7 +860,21 @@ async function sbLogout() {
   try { if (SBX.sess) await fetch(SBC.url + '/auth/v1/logout', { method: 'POST', headers: { apikey: SBC.key, Authorization: 'Bearer ' + SBX.sess.token } }); } catch (e) { }
   sbSessSave(null); LS.removeItem('cc_sb_company'); setSess(null); location.hash = ''; location.reload();
 }
+// Enlace del correo "olvidé mi contraseña": llega con #access_token=...&type=recovery (o con un error si venció)
+async function sbRecoveryFromUrl() {
+  const h = location.hash.slice(1); if (!/access_token=|error_code=|error=/.test(h)) return false;
+  const q = new URLSearchParams(h); history.replaceState(null, '', location.pathname + location.search);
+  if (q.get('error') || q.get('error_code')) { ACCT.mode = 'login'; acctShow(); toast(/expired/i.test(q.get('error_code') + q.get('error_description')) ? 'El enlace para cambiar la contraseña venció. Pida uno nuevo con "¿Olvidó su contraseña?".' : 'El enlace no es válido. Pida uno nuevo con "¿Olvidó su contraseña?".', true); return true; }
+  try {
+    const r = await fetch(SBC.url + '/auth/v1/user', { headers: { apikey: SBC.key, Authorization: 'Bearer ' + q.get('access_token') } }); const u = await r.json();
+    if (!r.ok) throw new Error(sbErr(r.status, u));
+    sbTake({ access_token: q.get('access_token'), refresh_token: q.get('refresh_token'), expires_in: Number(q.get('expires_in') || 3600), user: u });
+  } catch (e) { ACCT.mode = 'login'; acctShow(); toast('El enlace no es válido o venció. Pida uno nuevo.', true); return true; }
+  if (q.get('type') !== 'recovery') { await sbAfterLogin(); return true; }
+  ACCT.mode = 'reset'; acctShow(); return true;
+}
 async function sbBoot() {
+  if (await sbRecoveryFromUrl()) return;
   SBX.sess = sbSessLoad();
   if (!SBX.sess) { ACCT.mode = 'login'; return acctShow(); }
   try { await sbAfterLogin(); } catch (e) { if (e.code === 'revoked' || /JWT|token/i.test(e.message)) { sbSessSave(null); ACCT.mode = 'login'; acctShow(); } else { toast(e.message, true); ACCT.mode = 'company'; acctShow(); } }
@@ -853,10 +882,11 @@ async function sbBoot() {
 
 function acctButtons(box) {
   if (!SBC || !SBX.sess || !box) return; const d = document.createElement('div'); d.style.cssText = 'display:grid;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)';
-  d.innerHTML = `<div class="sub">Cuenta: <b>${esc(SBX.sess.user.email)}</b></div>${SBX.admin ? '<a class="btn" href="#plataforma" id="acPlat">Panel de plataforma</a>' : ''}${SBX.companies.length > 1 ? '<button class="btn" id="acSwCo">Cambiar de empresa</button>' : ''}<button class="btn" id="acAddCo">Agregar otra empresa</button><button class="btn d" id="acLogout">Cerrar sesión de la cuenta</button>`;
+  d.innerHTML = `<div class="sub">Cuenta: <b>${esc(SBX.sess.user.email)}</b></div>${SBX.admin ? '<a class="btn" href="#plataforma" id="acPlat">Panel de plataforma</a>' : ''}${SBX.companies.length > 1 ? '<button class="btn" id="acSwCo">Cambiar de empresa</button>' : ''}<button class="btn" id="acAddCo">Agregar otra empresa</button><button class="btn" id="acPwd">Cambiar contraseña</button><button class="btn d" id="acLogout">Cerrar sesión de la cuenta</button>`;
   box.appendChild(d); const pl = d.querySelector('#acPlat'); if (pl) pl.onclick = () => closeModal();
   const sc = d.querySelector('#acSwCo'); if (sc) sc.onclick = () => { LS.removeItem('cc_sb_company'); location.hash = ''; location.reload(); };
   d.querySelector('#acLogout').onclick = sbLogout;
+  d.querySelector('#acPwd').onclick = () => { closeModal(); ACCT.mode = 'reset'; acctShow(); const g = $('#acct'); const x = document.createElement('p'); x.className = 'sub'; x.style.cssText = 'text-align:center;margin:10px 0 0'; x.innerHTML = '<a href="javascript:void 0">Cancelar</a>'; g.querySelector('.gcard').appendChild(x); x.querySelector('a').onclick = () => g.remove(); };
   d.querySelector('#acAddCo').onclick = async () => { closeModal(); try { await sbLoadCompanies(); } catch (e) { } ACCT.mode = 'company'; acctShow(); const g = $('#acct'); if (g && !g.querySelector('#acBack')) { const x = document.createElement('p'); x.className = 'sub'; x.style.cssText = 'text-align:center;margin:10px 0 0'; x.innerHTML = '<a href="javascript:void 0" id="acBack">← Volver a ' + esc(SBX.company.name) + '</a>'; g.querySelector('.gcard').appendChild(x); x.querySelector('a').onclick = () => g.remove(); } };
 }
 function acctMenu() {
